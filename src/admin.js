@@ -286,6 +286,17 @@ function startAdminServer(dataProvider) {
         }
     });
 
+    // API: 保存下线提醒配置
+    app.post('/api/settings/offline-reminder', async (req, res) => {
+        try {
+            const body = (req.body && typeof req.body === 'object') ? req.body : {};
+            const data = store.setOfflineReminder ? store.setOfflineReminder(body) : {};
+            res.json({ ok: true, data: data || {} });
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
     // API: 获取配置
     app.get('/api/settings', async (req, res) => {
         try {
@@ -297,7 +308,10 @@ function startAdminServer(dataProvider) {
             const friendQuietHours = store.getFriendQuietHours(id);
             const automation = store.getAutomation(id);
             const ui = store.getUI();
-            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, ui } });
+            const offlineReminder = store.getOfflineReminder
+                ? store.getOfflineReminder()
+                : { endpoint: 'http://www.ggsuper.com.cn/push/api/v1/sendMsg3_New.php', token: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 120 };
+            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, ui, offlineReminder } });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
         }
