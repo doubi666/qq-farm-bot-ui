@@ -19,15 +19,15 @@ const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot 
 // 捕获日志发送给主进程
 setLogHook((tag, msg, isWarn, meta) => {
     if (process.send) {
-        process.send({ 
-            type: 'log', 
-            data: { 
-                time: new Date().toLocaleString(), 
-                tag, 
-                msg, 
+        process.send({
+            type: 'log',
+            data: {
+                time: new Date().toLocaleString(),
+                tag,
+                msg,
                 isWarn,
                 meta: meta || {},
-            } 
+            }
         });
     }
 });
@@ -37,7 +37,7 @@ setRecordGoldExpHook((gold, exp) => {
     // 更新内部统计
     const { recordGoldExp } = require('./stats');
     recordGoldExp(gold, exp);
-    
+
     // 发送给主进程
     if (process.send) {
         process.send({ type: 'stat_update', data: { gold, exp } });
@@ -242,7 +242,7 @@ async function startBot(config) {
     }
 
     await loadProto();
-    
+
     log('系统', '正在连接服务器...');
 
     // 加载保存的配置
@@ -256,19 +256,16 @@ async function startBot(config) {
         onWsError = null;
     }
     onWsError = (payload) => {
-        const statusCode = Number(payload && payload.code) || 0;
-        if (statusCode !== 400) return;
+        if ((Number(payload?.code) || 0) !== 400) return;
         const now = Date.now();
         if (now - wsErrorHandledAt < 4000) return;
         wsErrorHandledAt = now;
         log('系统', '连接被拒绝，可能需要更新 Code');
-        if (process.send) {
-            process.send({
-                type: 'ws_error',
-                code: statusCode,
-                message: (payload && payload.message) || '',
-            });
-        }
+        process.send?.({
+            type: 'ws_error',
+            code: 400,
+            message: payload?.message || '',
+        });
         if (isRunning) {
             setTimeout(() => {
                 if (isRunning) cleanup();
@@ -453,11 +450,11 @@ function syncStatus() {
     const userState = getUserState();
     const ws = getWs();
     const connected = !!(loginReady && ws && ws.readyState === 1);
-    
+
     let expProgress = null;
     const level = (userState.level ?? statusData.level ?? 0);
     const exp = (userState.exp ?? statusData.exp ?? 0);
-    
+
     if (level > 0 && exp >= 0) {
         expProgress = getLevelExpProgress(level, exp);
     }
@@ -469,7 +466,7 @@ function syncStatus() {
         farmRemainSec: Math.max(0, Math.ceil((Number(nextFarmRunAt || 0) - nowMs) / 1000)),
         friendRemainSec: Math.max(0, Math.ceil((Number(nextFriendRunAt || 0) - nowMs) / 1000)),
     };
-    
+
     fullStats.automation = getAutomation();
     fullStats.preferredSeed = getPreferredSeed();
     fullStats.expProgress = expProgress;

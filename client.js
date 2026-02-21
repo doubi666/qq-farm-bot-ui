@@ -227,7 +227,7 @@ function startWorker(account) {
     if (workers[account.id]) return; // 已运行
 
     log('系统', `正在启动账号: ${account.name}`);
-    
+
     let child = null;
     if (process.pkg) {
         // 打包后也走 fork + execPath，确保 IPC 通道可用
@@ -306,42 +306,35 @@ function restartWorker(account) {
     if (!account) return;
     const accountId = account.id;
     const worker = workers[accountId];
-    if (!worker) {
-        startWorker(account);
-        return;
-    }
+    if (!worker) return startWorker(account);
     const proc = worker.process;
     let started = false;
     const startOnce = () => {
         if (started) return;
         started = true;
         const current = workers[accountId];
-        if (!current) {
-            startWorker(account);
-            return;
-        }
-        if (current.process === proc) {
-            delete workers[accountId];
-            startWorker(account);
-        }
+        if (!current) return startWorker(account);
+        if (current.process !== proc) return;
+        delete workers[accountId];
+        startWorker(account);
+    };
+    const killIfStale = () => {
+        const current = workers[accountId];
+        if (!current || current.process !== proc) return false;
+        try {
+            current.process.kill();
+        } catch (e) {}
+        delete workers[accountId];
+        return true;
     };
     if (proc.exitCode !== null || proc.signalCode) {
-        startOnce();
-        return;
+        return startOnce();
     }
-    proc.once('exit', () => {
-        startOnce();
-    });
+    proc.once('exit', startOnce);
     stopWorker(accountId);
     setTimeout(() => {
         if (started) return;
-        const current = workers[accountId];
-        if (current && current.process === proc) {
-            try {
-                current.process.kill();
-            } catch (e) {}
-            delete workers[accountId];
-        }
+        killIfStale();
         startOnce();
     }, 1500);
 }
@@ -413,8 +406,7 @@ function handleWorkerMessage(accountId, msg) {
                 'ws_400',
                 `账号 ${worker.name} 登录失效，请更新 Code`,
                 accountId,
-                worker.name,
-                { reason: message || 'Unexpected server response: 400' }
+                worker.name
             );
         }
     } else if (msg.type === 'account_kicked') {
@@ -452,7 +444,7 @@ function callWorkerApi(accountId, method, ...args) {
     return new Promise((resolve, reject) => {
         const id = worker.reqId++;
         worker.requests.set(id, { resolve, reject });
-        
+
         // 超时处理
         setTimeout(() => {
             if (worker.requests.has(id)) {
@@ -479,15 +471,15 @@ const dataProvider = {
             wsError: w.wsError || null,
         };
     },
-    
+
     getLogs: (accountId, optionsOrLimit) => {
         const opts = (typeof optionsOrLimit === 'object' && optionsOrLimit) ? optionsOrLimit : { limit: optionsOrLimit };
         const max = Math.max(1, Number(opts.limit) || 100);
         if (!accountId) {
-            return filterLogs(GLOBAL_LOGS, opts).slice(-max).reverse();
+            return filterLogs(GLOBAL_LOGS, opts).slice(-max);
         }
         const accId = String(accountId);
-        return filterLogs(GLOBAL_LOGS.filter(l => String(l.accountId || '') === accId), opts).slice(-max).reverse();
+        return filterLogs(GLOBAL_LOGS.filter(l => String(l.accountId || '') === accId), opts).slice(-max);
     },
     getAccountLogs: (limit) => ACCOUNT_LOGS.slice(-limit).reverse(),
     addAccountLog: (action, msg, accountId, accountName, extra) => addAccountLog(action, msg, accountId, accountName, extra),
@@ -499,7 +491,7 @@ const dataProvider = {
     doFriendOp: (accountId, gid, opType) => callWorkerApi(accountId, 'doFriendOp', gid, opType),
     getBag: (accountId) => callWorkerApi(accountId, 'getBag'),
     getSeeds: (accountId) => callWorkerApi(accountId, 'getSeeds'),
-    
+
     setAutomation: async (accountId, key, value) => {
         store.setAutomation(key, value, accountId);
         const rev = nextConfigRevision();
@@ -543,25 +535,26 @@ const dataProvider = {
         });
         return data;
     },
-    
+
     startAccount: (id) => {
         const data = getAccounts();
         const acc = data.accounts.find(a => a.id === id);
         if (acc) startWorker(acc);
     },
-    
+
     stopAccount: (id) => stopWorker(id),
     restartAccount: (id) => {
         const data = getAccounts();
         const acc = data.accounts.find(a => a.id === id);
         if (acc) restartWorker(acc);
     },
+    isAccountRunning: (accountId) => !!workers[accountId],
 };
 
 // ============ 主入口 ============
 async function main() {
     console.log('正在启动 QQ农场多账号管理服务...');
-    
+
     // 1. 启动 Admin Server
     startAdminServer(dataProvider);
 
